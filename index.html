@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simple Dark Photo Culling</title>
+
+    <style>
+      body {
+        margin: 0;
+        background-color: #121212;
+        color: #eee;
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      h1 {
+        margin-bottom: 15px;
+        font-weight: normal;
+      }
+
+      #file-input {
+        margin-bottom: 15px;
+        color: #eee;
+      }
+
+      #export-btn {
+        background-color: #1e7e34;
+        border: none;
+        color: white;
+        padding: 12px 25px;
+        font-size: 1.1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        margin-bottom: 20px;
+        width: 100%;
+        max-width: 400px;
+        transition: background-color 0.3s ease;
+      }
+      #export-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #export-btn:hover:not(:disabled) {
+        background-color: #28a745;
+      }
+
+      #preview-container {
+        flex-grow: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        max-width: 400px;
+        border: 2px solid transparent;
+        border-radius: 10px;
+        overflow: hidden;
+        cursor: pointer;
+        box-sizing: border-box;
+      }
+
+      #preview-container.selected {
+        border-color: #4caf50;
+        box-shadow: 0 0 20px #4caf50;
+      }
+
+      #preview-container.not-selected {
+        border-color: #f44336; /* red */
+        box-shadow: 0 0 20px #f44336;
+      }
+
+      #preview-container img {
+        max-width: 100%;
+        max-height: 70vh;
+        user-select: none;
+        pointer-events: none;
+        border-radius: 8px;
+      }
+
+      #navigation {
+        margin-top: 15px;
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      button.nav-btn {
+        background-color: #333;
+        border: none;
+        color: #eee;
+        padding: 10px 20px;
+        font-size: 1.5rem;
+        border-radius: 6px;
+        cursor: pointer;
+        flex: 1;
+        margin: 0 5px;
+        user-select: none;
+        transition: background-color 0.3s ease;
+      }
+
+      button.nav-btn:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+
+      button.nav-btn:hover:not(:disabled) {
+        background-color: #4caf50;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Photo Culling</h1>
+
+    <input type="file" id="file-input" accept=".cullpkg" />
+    <button id="export-btn" disabled>Export Selected Package</button>
+
+    <div id="preview-container" title="Click to toggle selection"></div>
+
+    <div id="navigation" style="display: none">
+      <button id="prev-btn" class="nav-btn" aria-label="Previous photo">
+        &larr;
+      </button>
+      <button id="next-btn" class="nav-btn" aria-label="Next photo">
+        &rarr;
+      </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.0/dist/jszip.min.js"></script>
+    <script>
+      const fileInput = document.getElementById("file-input");
+      const previewContainer = document.getElementById("preview-container");
+      const exportBtn = document.getElementById("export-btn");
+      const navigation = document.getElementById("navigation");
+      const prevBtn = document.getElementById("prev-btn");
+      const nextBtn = document.getElementById("next-btn");
+
+      let currentPackage = null;
+      let manifest = null;
+      let selectedMap = new Map();
+      let currentIndex = 0;
+
+      async function updatePreview() {
+        if (!manifest) return;
+
+        const imgMeta = manifest.images[currentIndex];
+        const imgFile = currentPackage.file(`previews/${imgMeta.filename}`);
+
+        if (!imgFile) {
+          previewContainer.innerHTML = `<p style="color:#f44;">Preview file not found: previews/${imgMeta.filename}</p>`;
+          return;
+        }
+
+        try {
+          const blob = await imgFile.async("blob");
+          const url = URL.createObjectURL(blob);
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = imgMeta.id;
+          img.onload = () => URL.revokeObjectURL(url);
+
+          previewContainer.innerHTML = "";
+          previewContainer.appendChild(img);
+
+          // Update selection styling
+          if (selectedMap.get(imgMeta.id)) {
+            previewContainer.classList.add("selected");
+            previewContainer.classList.remove("not-selected");
+          } else {
+            previewContainer.classList.add("not-selected");
+            previewContainer.classList.remove("selected");
+          }
+
+          prevBtn.disabled = currentIndex === 0;
+          nextBtn.disabled = currentIndex === manifest.images.length - 1;
+        } catch (err) {
+          previewContainer.innerHTML = `<p style="color:#f44;">Error loading preview: ${err.message}</p>`;
+        }
+      }
+
+      // Load package
+      fileInput.addEventListener("change", async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        currentPackage = await JSZip.loadAsync(file);
+        const manifestFile = currentPackage.file("manifest.json");
+        if (!manifestFile) {
+          alert("manifest.json not found in package.");
+          return;
+        }
+
+        const manifestText = await manifestFile.async("text");
+        manifest = JSON.parse(manifestText);
+
+        // Initially select all images
+        selectedMap.clear();
+        for (const img of manifest.images) {
+          selectedMap.set(img.id, true);
+        }
+
+        currentIndex = 0;
+        updatePreview();
+
+        exportBtn.disabled = false;
+        navigation.style.display = manifest.images.length > 1 ? "flex" : "none";
+      });
+
+      // Toggle selection on clicking preview
+      previewContainer.addEventListener("click", () => {
+        if (!manifest) return;
+
+        const imgMeta = manifest.images[currentIndex];
+        const currentlySelected = selectedMap.get(imgMeta.id);
+        selectedMap.set(imgMeta.id, !currentlySelected);
+        previewContainer.classList.toggle("selected");
+      });
+
+      prevBtn.addEventListener("click", () => {
+        if (currentIndex > 0) {
+          currentIndex--;
+          updatePreview();
+        }
+      });
+
+      nextBtn.addEventListener("click", () => {
+        if (currentIndex < manifest.images.length - 1) {
+          currentIndex++;
+          updatePreview();
+        }
+      });
+
+      // Export selected package
+      exportBtn.addEventListener("click", async () => {
+        if (!currentPackage || !manifest) return;
+
+        const newManifest = { ...manifest };
+        newManifest.images = manifest.images.map((img) => ({
+          ...img,
+          selected: selectedMap.get(img.id) || false,
+        }));
+
+        const newZip = new JSZip();
+        newZip.file("manifest.json", JSON.stringify(newManifest, null, 2));
+
+        const previewsFolder = currentPackage.folder("previews");
+        if (!previewsFolder) {
+          alert("No previews folder found.");
+          return;
+        }
+
+        previewsFolder.forEach((relativePath, file) => {
+          newZip.file(`previews/${relativePath}`, file.async("uint8array"));
+        });
+
+        const blob = await newZip.generateAsync({ type: "blob" });
+
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download =
+          (manifest.project_name || "selected") + "_selected.cullpkg";
+        a.click();
+
+        URL.revokeObjectURL(a.href);
+      });
+    </script>
+  </body>
+</html>
