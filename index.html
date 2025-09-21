@@ -16,7 +16,7 @@
         align-items: center;
         padding: 20px;
         height: 100vh;
-        overflow: hidden;
+        /* overflow: hidden; */
       }
 
       h1 {
@@ -56,12 +56,13 @@
         justify-content: center;
         align-items: center;
         width: 100%;
-        max-width: 400px;
+        /* max-width: 400px; */
         border: 2px solid transparent;
         border-radius: 10px;
         overflow: hidden;
         cursor: pointer;
         box-sizing: border-box;
+        margin: 1rem 0rem;
       }
 
       #preview-container.selected {
@@ -115,7 +116,7 @@
     </style>
   </head>
   <body>
-    <h1>Photo Culling</h1>
+    <h5>Photo Culling v0.1</h5>
 
     <input type="file" id="file-input" accept=".cullpkg" />
     <button id="export-btn" disabled>Export Selected Package</button>
